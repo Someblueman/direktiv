@@ -6,8 +6,16 @@ from typing import Optional
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Container
 from textual.widgets import Header, Footer
+from textual import events
+
 from .widgets.file_tree import FileTree
 from .widgets.viewer import MarkdownViewer
+from .widgets.dialogs import (
+    InputDialog,
+    FilePickerDialog,
+    CategorySelectDialog,
+    ConfirmDialog
+)
 from .database import Database
 from .document_manager import DocumentManager
 
@@ -59,7 +67,9 @@ class DirektivApp(App[None]):
         ("ctrl+c", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
         ("h", "help", "Help"),
-        ("ctrl+n", "add_file", "Add File"),
+        ("shift+a", "add_document", "Add Document"),
+        ("shift+i", "import_documents", "Import"),
+        ("shift+n", "new_category", "New Category"),
     ]
 
     def __init__(self, root_dir: Optional[Path] = None, **kwargs) -> None:
@@ -121,45 +131,219 @@ class DirektivApp(App[None]):
         - Enter: Open selected document
         - Space: Mark document as read/unread
         - Del: Delete selected document
-        - Ctrl+N: Add new document
+        - Del: Delete document
         
         Global shortcuts:
+        - Shift+A: Add document to library
+        - Shift+I: Import documents from directory
+        - Shift+N: Create new category
         - r: Refresh library
-        - q/Ctrl+C: Quit
         - h: Show this help
+        - q/Ctrl+C: Quit
         
         CLI Commands:
         - direktiv add <file>: Add document to library
+        - direktiv import <dir>: Import directory
         - direktiv list: List all documents
         - direktiv new-category: Create category
         """
         if self.viewer:
             self.viewer.show_content(help_text, is_markdown=True)
 
-    def action_add_file(self) -> None:
-        """Show add file dialog."""
-        if self.file_tree:
-            # Show instructions for adding documents
+    async def action_add_document(self) -> None:
+        """Show dialog to add a document to library."""
+        # First, get the file path
+        file_path = await self.push_screen(
+            FilePickerDialog(
+                title="Add Document to Library",
+                file_filter="*.md"
+            )
+        )
+        
+        if not file_path:
+            return
+        
+        # Check if it's a valid markdown file
+        if not file_path.exists():
+            await self.push_screen(
+                ConfirmDialog(
+                    "Error",
+                    f"File {file_path} does not exist."
+                )
+            )
+            return
+        
+        if file_path.suffix.lower() != '.md':
+            await self.push_screen(
+                ConfirmDialog(
+                    "Error",
+                    "Only markdown files (.md) can be added to the library."
+                )
+            )
+            return
+        
+        # Get list of categories
+        categories = self.doc_manager.list_categories()
+        
+        # Show category selection dialog
+        category = await self.push_screen(
+            CategorySelectDialog(
+                title="Select Category",
+                categories=categories,
+                default_category="General"
+            )
+        )
+        
+        if not category:
+            return
+        
+        # Add the document
+        success, message, library_path = self.doc_manager.add_document(
+            file_path, category
+        )
+        
+        if success and library_path:
+            # Add to database
+            self.database.add_document(
+                str(library_path),
+                category=category,
+                original_path=str(file_path)
+            )
+            
+            # Refresh the file tree
+            if self.file_tree:
+                self.file_tree.refresh_tree()
+            
+            # Show success message
             if self.viewer:
-                add_help = """
-                Add Documents to Library
-                
-                To add documents to your library, exit the viewer (press 'q') and use:
-                
-                ```bash
-                # Add a single document
-                direktiv add path/to/document.md
-                
-                # Add to specific category
-                direktiv add doc.md --category Work
-                
-                # Import entire directory
-                direktiv import ~/Documents/notes
-                ```
-                
-                Press 'r' to refresh the library after adding documents.
-                """
-                self.viewer.show_content(add_help, is_markdown=True)
+                self.viewer.show_content(
+                    f"# Document Added\n\n{message}",
+                    is_markdown=True
+                )
+        else:
+            # Show error message
+            await self.push_screen(
+                ConfirmDialog(
+                    "Error",
+                    message
+                )
+            )
+    
+    async def action_import_documents(self) -> None:
+        """Show dialog to import documents from a directory."""
+        # Get directory path
+        dir_path = await self.push_screen(
+            FilePickerDialog(
+                title="Import Documents from Directory",
+                file_filter="Directory"
+            )
+        )
+        
+        if not dir_path:
+            return
+        
+        # Check if it's a directory
+        if not dir_path.is_dir():
+            await self.push_screen(
+                ConfirmDialog(
+                    "Error",
+                    f"{dir_path} is not a directory."
+                )
+            )
+            return
+        
+        # Get list of categories
+        categories = self.doc_manager.list_categories()
+        categories.append("[Use subdirectories as categories]")
+        
+        # Show category selection dialog
+        category = await self.push_screen(
+            CategorySelectDialog(
+                title="Import to Category",
+                categories=categories,
+                default_category="[Use subdirectories as categories]"
+            )
+        )
+        
+        if not category:
+            return
+        
+        # Handle special case for subdirectory categorization
+        if category == "[Use subdirectories as categories]":
+            category = None
+        
+        # Import documents
+        success_count, fail_count, messages = self.doc_manager.import_directory(
+            dir_path, category, recursive=True
+        )
+        
+        # Update database for imported files
+        for doc in self.doc_manager.list_documents():
+            if not self.database.get_document_info(doc['path']):
+                self.database.add_document(
+                    doc['path'],
+                    category=doc['category']
+                )
+        
+        # Refresh the file tree
+        if self.file_tree:
+            self.file_tree.refresh_tree()
+        
+        # Show results
+        if self.viewer:
+            result_text = f"""# Import Results
+
+Imported **{success_count}** document(s) from {dir_path}
+"""
+            if fail_count > 0:
+                result_text += f"\nFailed to import **{fail_count}** document(s)\n"
+            
+            if len(messages) <= 20:
+                result_text += "\n## Details:\n\n"
+                for msg in messages:
+                    result_text += f"- {msg}\n"
+            
+            self.viewer.show_content(result_text, is_markdown=True)
+    
+    async def action_new_category(self) -> None:
+        """Show dialog to create a new category."""
+        # Get category name
+        category_name = await self.push_screen(
+            InputDialog(
+                title="Create New Category",
+                prompt="Enter category name:",
+                placeholder="e.g., Projects, Research, Notes"
+            )
+        )
+        
+        if not category_name:
+            return
+        
+        # Create the category
+        success, message = self.doc_manager.create_category(category_name)
+        
+        if success:
+            # Add to database
+            self.database.add_category(category_name)
+            
+            # Refresh the file tree
+            if self.file_tree:
+                self.file_tree.refresh_tree()
+            
+            # Show success message
+            if self.viewer:
+                self.viewer.show_content(
+                    f"# Category Created\n\n{message}",
+                    is_markdown=True
+                )
+        else:
+            # Show error message
+            await self.push_screen(
+                ConfirmDialog(
+                    "Error",
+                    message
+                )
+            )
 
     def on_file_tree_file_selected(self, message) -> None:
         """Handle file selection from file tree."""
