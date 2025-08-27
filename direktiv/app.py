@@ -12,9 +12,9 @@ from .widgets.file_tree import FileTree
 from .widgets.viewer import MarkdownViewer
 from .widgets.dialogs import (
     InputDialog,
-    FilePickerDialog,
+    SimpleFileDialog,
     CategorySelectDialog,
-    ConfirmDialog
+    MessageDialog
 )
 from .database import Database
 from .document_manager import DocumentManager
@@ -154,32 +154,13 @@ class DirektivApp(App[None]):
         """Show dialog to add a document to library."""
         # First, get the file path
         file_path = await self.push_screen(
-            FilePickerDialog(
+            SimpleFileDialog(
                 title="Add Document to Library",
-                file_filter="*.md"
+                select_directory=False
             )
         )
         
         if not file_path:
-            return
-        
-        # Check if it's a valid markdown file
-        if not file_path.exists():
-            await self.push_screen(
-                ConfirmDialog(
-                    "Error",
-                    f"File {file_path} does not exist."
-                )
-            )
-            return
-        
-        if file_path.suffix.lower() != '.md':
-            await self.push_screen(
-                ConfirmDialog(
-                    "Error",
-                    "Only markdown files (.md) can be added to the library."
-                )
-            )
             return
         
         # Get list of categories
@@ -223,7 +204,7 @@ class DirektivApp(App[None]):
         else:
             # Show error message
             await self.push_screen(
-                ConfirmDialog(
+                MessageDialog(
                     "Error",
                     message
                 )
@@ -233,23 +214,13 @@ class DirektivApp(App[None]):
         """Show dialog to import documents from a directory."""
         # Get directory path
         dir_path = await self.push_screen(
-            FilePickerDialog(
+            SimpleFileDialog(
                 title="Import Documents from Directory",
-                file_filter="Directory"
+                select_directory=True
             )
         )
         
         if not dir_path:
-            return
-        
-        # Check if it's a directory
-        if not dir_path.is_dir():
-            await self.push_screen(
-                ConfirmDialog(
-                    "Error",
-                    f"{dir_path} is not a directory."
-                )
-            )
             return
         
         # Get list of categories
@@ -339,7 +310,7 @@ Imported **{success_count}** document(s) from {dir_path}
         else:
             # Show error message
             await self.push_screen(
-                ConfirmDialog(
+                MessageDialog(
                     "Error",
                     message
                 )
