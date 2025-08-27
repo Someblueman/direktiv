@@ -1,109 +1,153 @@
 # direktiv
 
-A simple and elegant terminal markdown reader/viewer built with Python and Textual.
+A personal markdown document manager for your terminal.
+
+## Overview
+
+direktiv v0.2.0 is a terminal-based markdown document manager that provides a centralized library for all your markdown files. Instead of browsing directories, direktiv maintains its own organized document library in `~/.direktiv/documents/`, allowing you to categorize and manage your markdown documents from one place.
 
 ## Features
 
-- **Two-pane interface**: File browser on the left, markdown viewer on the right
-- **Hierarchical file browsing**: Navigate through directories and subdirectories
-- **Read status tracking**: Mark files as read/unread with visual indicators
-- **Beautiful markdown rendering**: Syntax highlighting, tables, lists, and more
-- **Vim-style navigation**: Use familiar keybindings for scrolling
-- **File operations**: Add, delete, and organize your markdown files
-- **Cross-platform**: Works on macOS, Linux, and Windows
+- **Centralized Library**: All documents stored in `~/.direktiv/documents/`
+- **Category Organization**: Organize documents into categories (General, Work, Personal, etc.)
+- **TUI Viewer**: Beautiful terminal interface for reading markdown
+- **Read/Unread Tracking**: Keep track of which documents you've read
+- **CLI Commands**: Add, import, list, and manage documents from the command line
+- **Document Import**: Bulk import existing markdown files
+- **Statistics**: Track your reading progress and library stats
 
 ## Installation
 
 ```bash
-# Install from source
-git clone https://github.com/yourusername/direktiv.git
-cd direktiv
-pip install -e .
-
-# Or install from PyPI (when published)
 pip install direktiv
 ```
 
 ## Usage
 
+### Launch the TUI Viewer
+
 ```bash
-# Launch with current directory
+# Launch the interactive viewer
 direktiv
-
-# Launch with specific directory
-direktiv ~/Documents
-
-# Launch with any path
-direktiv /path/to/markdown/files
-
-# Show version
-direktiv --version
 ```
 
-## Controls
+In the viewer:
+- Arrow keys: Navigate categories and documents
+- Enter: Open document
+- Space: Mark as read/unread
+- r: Refresh library
+- h: Show help
+- q: Quit
 
-### Navigation
-- **Arrow keys**: Navigate the file tree
-- **Enter**: Open selected file
-- **Tab**: Switch between panes
+### CLI Commands
 
-### File Operations
-- **Space**: Toggle read/unread status
-- **Delete**: Delete selected file
-- **Ctrl+N**: Add new file (copy from elsewhere)
+#### Add a Document
 
-### Viewer Controls
-- **j/k**: Scroll up/down (vim-style)
-- **Page Up/Down**: Page navigation
-- **Home/End**: Jump to top/bottom
-- **g**: Go to top
-- **Shift+G**: Go to bottom
+```bash
+# Add to default category (General)
+direktiv add README.md
 
-### Global Controls
-- **r**: Refresh file tree
-- **h**: Show help
-- **q** or **Ctrl+C**: Quit
+# Add to specific category
+direktiv add notes.md --category Personal
 
-## File Status Indicators
+# Add with custom title
+direktiv add doc.md -c Work -t "Meeting Notes"
+```
 
-- **●** Unread file
-- **✓** Read file
-- **🗂️** Directory
+#### Create Categories
+
+```bash
+direktiv new-category "Project Documentation"
+direktiv new-category Research
+```
+
+#### Import Documents
+
+```bash
+# Import directory recursively
+direktiv import ~/Documents/markdown
+
+# Import to specific category
+direktiv import ./docs --category Documentation
+
+# Import non-recursively
+direktiv import ./notes --no-recursive
+```
+
+#### List Documents
+
+```bash
+# List all documents
+direktiv list
+
+# Filter by category
+direktiv list --category Work
+
+# Search by filename
+direktiv list --search readme
+```
+
+#### View Statistics
+
+```bash
+# Show library statistics
+direktiv stats
+
+# List all categories
+direktiv categories
+```
+
+#### Export Library
+
+```bash
+# Export entire library
+direktiv export ~/backup/my-documents
+```
+
+## Library Structure
+
+Your documents are organized in:
+
+```
+~/.direktiv/
+├── documents/       # Your markdown library
+│   ├── General/
+│   ├── Personal/
+│   ├── Work/
+│   └── [Custom Categories]/
+├── database.db      # Document metadata & read status
+└── config.json      # User preferences
+```
 
 ## Configuration
 
-direktiv stores its database in `~/.direktiv/database.db` to track read status across sessions.
+Configuration is stored in `~/.direktiv/config.json` and includes:
+- Default category for new documents
+- Theme preferences
+- Auto-mark as read timer
+- Category icons and colors
+
+## Upgrading from v0.1.0
+
+Version 0.2.0 introduces the document library concept. Instead of browsing arbitrary directories, direktiv now manages its own library. Use the `import` command to bring existing markdown files into your library.
 
 ## Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/direktiv.git
-cd direktiv
-
-# Install development dependencies
+# Install in development mode
 pip install -e ".[dev]"
 
 # Run tests
 pytest
 
-# Run with coverage
-pytest --cov=direktiv
-
 # Format code
-black direktiv/
-isort direktiv/
-
-# Type checking
-mypy direktiv/
+black direktiv/ && isort direktiv/
 ```
-
-## Requirements
-
-- Python 3.10+
-- Terminal with color support
-- Modern terminal emulator recommended for best experience
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

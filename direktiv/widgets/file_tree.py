@@ -10,10 +10,11 @@ from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
 from ..database import Database
+from ..document_manager import DocumentManager
 
 
 class FileTree(Tree[Path]):
-    """A tree widget for browsing markdown files."""
+    """A tree widget for browsing documents organized by category."""
 
     class FileSelected(Message):
         """Message sent when a file is selected."""
@@ -36,18 +37,19 @@ class FileTree(Tree[Path]):
         """Initialize the file tree.
         
         Args:
-            root_dir: Root directory to browse
+            root_dir: Root directory (library path)
             database: Database instance for read status
         """
         super().__init__(
-            label=str(root_dir.name),
+            label="Library",
             data=root_dir,
             **kwargs
         )
         self.root_dir = root_dir
         self.database = database
+        self.doc_manager = DocumentManager(root_dir)
         self.can_focus = True
-        self.border_title = "Files"
+        self.border_title = "Documents"
 
     def on_mount(self) -> None:
         """Called when the widget is mounted."""
@@ -55,68 +57,62 @@ class FileTree(Tree[Path]):
         self._populate_tree()
 
     def _populate_tree(self) -> None:
-        """Populate the tree with markdown files and directories."""
-        self._add_directory_contents(self.root, self.root_dir)
+        """Populate the tree with categories and documents."""
+        self._add_categories_and_documents(self.root)
         self.root.expand()
 
-    def _add_directory_contents(self, node: TreeNode[Path], directory: Path) -> None:
-        """Add contents of a directory to the tree.
+    def _add_categories_and_documents(self, node: TreeNode[Path]) -> None:
+        """Add categories and their documents to the tree.
         
         Args:
-            node: Tree node to add contents to
-            directory: Directory to scan
+            node: Root tree node
         """
-        try:
-            # Get all items in directory
-            items = sorted(directory.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
-            
-            for item in items:
-                if item.is_dir():
-                    # Add directory node - Textual provides its own expand/collapse indicator
-                    dir_node = node.add(item.name, data=item)
-                    # Recursively add contents if directory contains markdown files
-                    if self._has_markdown_files(item):
-                        self._add_directory_contents(dir_node, item)
-                elif item.suffix.lower() == '.md':
-                    # Add markdown file with read status indicator
-                    is_read = self.database.is_read(str(item))
-                    status_icon = "✓" if is_read else "●"
-                    node.add(f"{status_icon} {item.name}", data=item)
-        except PermissionError:
-            # Skip directories we can't read
-            pass
+        categories = self.doc_manager.list_categories()
+        
+        # Add categories as top-level nodes
+        for category in categories:
+            category_path = self.root_dir / category
+            if category_path.exists():
+                # Add category node
+                cat_node = node.add(f"📁 {category}", data=category_path)
+                
+                # Add documents in this category
+                documents = self.doc_manager.list_documents(category)
+                for doc in documents:
+                    doc_path = Path(doc['path'])
+                    if doc_path.exists():
+                        # Get read status from database
+                        is_read = self.database.is_read(doc['path'])
+                        status_icon = "✓" if is_read else "●"
+                        doc_node = cat_node.add(
+                            f"{status_icon} {doc['name']}", 
+                            data=doc_path
+                        )
+                
+                # Expand category if it has documents
+                if documents:
+                    cat_node.expand()
 
-    def _has_markdown_files(self, directory: Path) -> bool:
-        """Check if directory contains markdown files recursively.
+    def _has_documents(self, category: str) -> bool:
+        """Check if category contains documents.
         
         Args:
-            directory: Directory to check
+            category: Category name
             
         Returns:
-            True if directory contains .md files
+            True if category has documents
         """
-        try:
-            for item in directory.rglob("*.md"):
-                if item.is_file():
-                    return True
-        except PermissionError:
-            pass
-        return False
+        documents = self.doc_manager.list_documents(category)
+        return len(documents) > 0
 
-    def get_markdown_files(self) -> List[Path]:
-        """Get all markdown files in the root directory.
+    def get_all_documents(self) -> List[Path]:
+        """Get all documents in the library.
         
         Returns:
-            List of markdown file paths
+            List of document paths
         """
-        markdown_files = []
-        try:
-            for item in self.root_dir.rglob("*.md"):
-                if item.is_file():
-                    markdown_files.append(item)
-        except PermissionError:
-            pass
-        return sorted(markdown_files)
+        all_docs = self.doc_manager.list_documents()
+        return [Path(doc['path']) for doc in all_docs if Path(doc['path']).exists()]
 
     @on(Tree.NodeSelected)
     def on_node_selected(self, event: Tree.NodeSelected[Path]) -> None:
@@ -177,6 +173,9 @@ class FileTree(Tree[Path]):
         if self.cursor_node and self.cursor_node.data:
             selected_path = self.cursor_node.data
         
+        # Sync database with current documents
+        self._sync_database()
+        
         # Rebuild tree
         self.clear()
         self._populate_tree()
@@ -187,6 +186,17 @@ class FileTree(Tree[Path]):
         # Try to restore selection
         if selected_path:
             self._select_path(selected_path)
+    
+    def _sync_database(self) -> None:
+        """Sync database with current documents in library."""
+        all_docs = self.doc_manager.list_documents()
+        for doc in all_docs:
+            if not self.database.get_document_info(doc['path']):
+                # Add new document to database
+                self.database.add_document(
+                    doc['path'],
+                    category=doc['category']
+                )
 
     def _select_path(self, target_path: Path, node: Optional[TreeNode[Path]] = None) -> bool:
         """Try to select a specific path in the tree.
@@ -227,73 +237,65 @@ class FileTree(Tree[Path]):
         # Refresh tree to update status indicators
         self.refresh_tree()
 
-    def delete_file(self, file_path: Path) -> bool:
-        """Delete a file.
+    def delete_document(self, document_path: Path) -> bool:
+        """Delete a document from the library.
         
         Args:
-            file_path: Path to the file to delete
+            document_path: Path to the document to delete
             
         Returns:
             True if deletion was successful
         """
-        try:
-            file_path.unlink()
+        success, _ = self.doc_manager.delete_document(document_path)
+        if success:
+            # Remove from database
+            self.database.delete_document(str(document_path))
             self.refresh_tree()
-            return True
-        except Exception:
-            return False
+        return success
 
-    def add_file(self, source_path: Path, destination_name: Optional[str] = None) -> bool:
-        """Copy a file to the current directory.
+    def add_document(self, source_path: Path, category: str = "General") -> bool:
+        """Add a document to the library.
         
         Args:
-            source_path: Path to source file
-            destination_name: Optional destination filename
+            source_path: Path to source document
+            category: Category to add to
             
         Returns:
-            True if copy was successful
+            True if successful
         """
-        try:
-            if not source_path.exists() or source_path.suffix.lower() != '.md':
-                return False
-            
-            dest_name = destination_name or source_path.name
-            dest_path = self.root_dir / dest_name
-            
-            # Avoid overwriting existing files
-            counter = 1
-            while dest_path.exists():
-                name_part = dest_path.stem
-                dest_path = self.root_dir / f"{name_part}_{counter}.md"
-                counter += 1
-            
-            shutil.copy2(source_path, dest_path)
+        success, _, library_path = self.doc_manager.add_document(source_path, category)
+        if success and library_path:
+            # Add to database
+            self.database.add_document(
+                str(library_path),
+                category=category,
+                original_path=str(source_path)
+            )
             self.refresh_tree()
-            return True
-        except Exception:
-            return False
+        return success
 
-    def get_selected_file(self) -> Optional[Path]:
-        """Get the currently selected file.
+    def get_selected_document(self) -> Optional[Path]:
+        """Get the currently selected document.
         
         Returns:
-            Path to selected file or None
+            Path to selected document or None
         """
         if self.cursor_node and self.cursor_node.data:
-            if self.cursor_node.data.is_file():
-                return self.cursor_node.data
+            data = self.cursor_node.data
+            if data.is_file() and data.suffix.lower() == '.md':
+                return data
         return None
 
     async def key_space(self) -> None:
         """Handle space key - toggle read status."""
-        selected_file = self.get_selected_file()
-        if selected_file:
-            current_status = self.database.is_read(str(selected_file))
-            self.mark_file_read(selected_file, not current_status)
+        selected_doc = self.get_selected_document()
+        if selected_doc:
+            current_status = self.database.is_read(str(selected_doc))
+            self.mark_file_read(selected_doc, not current_status)
 
     async def key_delete(self) -> None:
-        """Handle delete key - delete selected file."""
-        selected_file = self.get_selected_file()
-        if selected_file:
+        """Handle delete key - delete selected document."""
+        selected_doc = self.get_selected_document()
+        if selected_doc:
             # In a real app, you'd show a confirmation dialog
-            self.delete_file(selected_file)
+            self.delete_document(selected_doc)

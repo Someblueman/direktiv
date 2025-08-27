@@ -9,10 +9,11 @@ from textual.widgets import Header, Footer
 from .widgets.file_tree import FileTree
 from .widgets.viewer import MarkdownViewer
 from .database import Database
+from .document_manager import DocumentManager
 
 
 class DirektivApp(App[None]):
-    """Terminal markdown reader application."""
+    """Personal markdown document manager application."""
 
     CSS = """
     #main-container {
@@ -61,15 +62,22 @@ class DirektivApp(App[None]):
         ("ctrl+n", "add_file", "Add File"),
     ]
 
-    def __init__(self, root_dir: Path, **kwargs) -> None:
+    def __init__(self, root_dir: Optional[Path] = None, **kwargs) -> None:
         """Initialize the application.
 
         Args:
-            root_dir: Root directory to browse markdown files
+            root_dir: Root directory for documents. Defaults to ~/.direktiv/documents
         """
         super().__init__(**kwargs)
+        
+        # Default to library path
+        if root_dir is None:
+            root_dir = Path.home() / ".direktiv" / "documents"
+            root_dir.mkdir(parents=True, exist_ok=True)
+        
         self.root_dir = root_dir.resolve()
         self.database = Database()
+        self.doc_manager = DocumentManager(self.root_dir)
         self.file_tree: Optional[FileTree] = None
         self.viewer: Optional[MarkdownViewer] = None
         self.dark = True  # Use dark theme
@@ -92,8 +100,8 @@ class DirektivApp(App[None]):
 
     def on_mount(self) -> None:
         """Called when the app is mounted."""
-        self.title = f"direktiv - {self.root_dir}"
-        self.sub_title = "Terminal Markdown Reader"
+        self.title = "direktiv"
+        self.sub_title = "Personal Markdown Document Manager"
 
     def action_refresh(self) -> None:
         """Refresh the file tree."""
@@ -103,22 +111,27 @@ class DirektivApp(App[None]):
     def action_help(self) -> None:
         """Show help information."""
         help_text = """
-        direktiv - Terminal Markdown Reader
+        direktiv - Personal Markdown Document Manager
         
         File Status Icons:
-        ● Unread file    ✓ Read file
+        ● Unread document    ✓ Read document
         
         Navigation:
-        - Arrow keys: Navigate file tree
-        - Enter: Open selected file
-        - Space: Mark file as read/unread
-        - Del: Delete selected file
-        - Ctrl+N: Add new file
+        - Arrow keys: Navigate categories and documents
+        - Enter: Open selected document
+        - Space: Mark document as read/unread
+        - Del: Delete selected document
+        - Ctrl+N: Add new document
         
         Global shortcuts:
-        - r: Refresh file tree
+        - r: Refresh library
         - q/Ctrl+C: Quit
         - h: Show this help
+        
+        CLI Commands:
+        - direktiv add <file>: Add document to library
+        - direktiv list: List all documents
+        - direktiv new-category: Create category
         """
         if self.viewer:
             self.viewer.show_content(help_text, is_markdown=True)
@@ -126,18 +139,25 @@ class DirektivApp(App[None]):
     def action_add_file(self) -> None:
         """Show add file dialog."""
         if self.file_tree:
-            # For now, show a message that the feature is available
+            # Show instructions for adding documents
             if self.viewer:
                 add_help = """
-                Add File Feature
+                Add Documents to Library
                 
-                To add a file, you can use one of these methods:
+                To add documents to your library, exit the viewer (press 'q') and use:
                 
-                1. Copy a markdown file to the current directory manually
-                2. Create a new .md file in the directory
-                3. Use the file tree's add functionality (future enhancement)
+                ```bash
+                # Add a single document
+                direktiv add path/to/document.md
                 
-                Press 'r' to refresh the file tree after adding files manually.
+                # Add to specific category
+                direktiv add doc.md --category Work
+                
+                # Import entire directory
+                direktiv import ~/Documents/notes
+                ```
+                
+                Press 'r' to refresh the library after adding documents.
                 """
                 self.viewer.show_content(add_help, is_markdown=True)
 
@@ -145,5 +165,14 @@ class DirektivApp(App[None]):
         """Handle file selection from file tree."""
         if self.viewer and message.file_path:
             self.viewer.show_file(message.file_path)
-            # Mark file as opened (not necessarily read)
+            # Update database with library path
             self.database.update_last_opened(str(message.file_path))
+            
+            # Ensure document is in database
+            if not self.database.get_document_info(str(message.file_path)):
+                # Determine category from path
+                category = message.file_path.parent.name
+                self.database.add_document(
+                    str(message.file_path),
+                    category=category
+                )
