@@ -21,17 +21,18 @@ class MarkdownViewer(VerticalScroll):
         super().__init__(**kwargs)
         self._content_widget: Optional[Static] = None
         self.border_title = "Markdown Viewer"
+        self.can_focus = True
 
     def on_mount(self) -> None:
         """Called when the widget is mounted."""
         self.show_content(
             "Welcome to direktiv\n\nSelect a markdown file from the left pane to view it here.",
-            is_markdown=True
+            is_markdown=True,
         )
 
     def show_content(self, content: str, is_markdown: bool = True) -> None:
         """Display content in the viewer.
-        
+
         Args:
             content: Content to display
             is_markdown: Whether to render as markdown
@@ -43,32 +44,32 @@ class MarkdownViewer(VerticalScroll):
             else:
                 # Render as plain text
                 renderable = Text(content)
-            
+
             # Remove existing content widget if present
             if self._content_widget:
                 self._content_widget.remove()
-            
+
             # Create new content widget
             self._content_widget = Static(renderable)
             self.mount(self._content_widget)
-            
+
             # Scroll to top when new content is loaded
             self.scroll_home()
-            
+
         except Exception as e:
             # Show error message if rendering fails
             error_text = f"Error rendering content: {str(e)}\n\nRaw content:\n{content}"
-            
+
             # Remove existing content widget if present
             if self._content_widget:
                 self._content_widget.remove()
-                
+
             self._content_widget = Static(Text(error_text))
             self.mount(self._content_widget)
 
     def show_file(self, file_path: Path) -> None:
         """Load and display a markdown file.
-        
+
         Args:
             file_path: Path to the markdown file
         """
@@ -94,7 +95,7 @@ class MarkdownViewer(VerticalScroll):
 
     def get_current_file(self) -> Optional[Path]:
         """Get the currently displayed file.
-        
+
         Returns:
             Path to current file or None
         """
@@ -132,9 +133,11 @@ class MarkdownViewer(VerticalScroll):
         """Handle Shift+G key - scroll to bottom (vim-style)."""
         self.scroll_end()
 
-    def watch_current_file(self, old_file: Optional[Path], new_file: Optional[Path]) -> None:
+    def watch_current_file(
+        self, old_file: Optional[Path], new_file: Optional[Path]
+    ) -> None:
         """React to current file changes.
-        
+
         Args:
             old_file: Previous file
             new_file: New file

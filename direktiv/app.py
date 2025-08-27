@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Container
 from textual.widgets import Header, Footer
 from .widgets.file_tree import FileTree
 from .widgets.viewer import MarkdownViewer
@@ -13,14 +13,43 @@ from .database import Database
 
 class DirektivApp(App[None]):
     """Terminal markdown reader application."""
-    
+
     CSS = """
-    FileTree {
-        width: 30%;
+    #main-container {
+        height: 100%;
+        width: 100%;
     }
     
-    MarkdownViewer {
-        width: 70%;
+    #panes {
+        height: 100%;
+        width: 100%;
+        layout: horizontal;
+    }
+    
+    #file-tree {
+        width: 1fr;
+        max-width: 50;
+        border: round $primary;
+        border-title-align: left;
+        margin: 0;
+        padding: 0;
+    }
+    
+    #file-tree:focus {
+        border: round $accent;
+    }
+    
+    #markdown-viewer {
+        width: 2fr;
+        border: round $primary;
+        border-title-align: left;
+        margin: 0;
+        margin-left: -1;
+        padding: 0;
+    }
+    
+    #markdown-viewer:focus {
+        border: round $accent;
     }
     """
 
@@ -34,7 +63,7 @@ class DirektivApp(App[None]):
 
     def __init__(self, root_dir: Path, **kwargs) -> None:
         """Initialize the application.
-        
+
         Args:
             root_dir: Root directory to browse markdown files
         """
@@ -48,17 +77,17 @@ class DirektivApp(App[None]):
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
         yield Header()
-        
-        with Horizontal():
-            self.file_tree = FileTree(
-                root_dir=self.root_dir,
-                database=self.database
-            )
-            yield self.file_tree
-            
-            self.viewer = MarkdownViewer()
-            yield self.viewer
-            
+
+        with Container(id="main-container"):
+            with Horizontal(id="panes"):
+                self.file_tree = FileTree(
+                    root_dir=self.root_dir, database=self.database, id="file-tree"
+                )
+                yield self.file_tree
+
+                self.viewer = MarkdownViewer(id="markdown-viewer")
+                yield self.viewer
+
         yield Footer()
 
     def on_mount(self) -> None:
@@ -77,7 +106,7 @@ class DirektivApp(App[None]):
         direktiv - Terminal Markdown Reader
         
         File Status Icons:
-        ● Unread file    ✓ Read file    🗂️ Directory
+        ● Unread file    ✓ Read file
         
         Navigation:
         - Arrow keys: Navigate file tree
@@ -92,7 +121,7 @@ class DirektivApp(App[None]):
         - h: Show this help
         """
         if self.viewer:
-            self.viewer.show_content(help_text, is_markdown=False)
+            self.viewer.show_content(help_text, is_markdown=True)
 
     def action_add_file(self) -> None:
         """Show add file dialog."""

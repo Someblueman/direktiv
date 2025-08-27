@@ -72,8 +72,8 @@ class FileTree(Tree[Path]):
             
             for item in items:
                 if item.is_dir():
-                    # Add directory node with more colorful icon
-                    dir_node = node.add(f"🗂️  {item.name}", data=item)
+                    # Add directory node - Textual provides its own expand/collapse indicator
+                    dir_node = node.add(item.name, data=item)
                     # Recursively add contents if directory contains markdown files
                     if self._has_markdown_files(item):
                         self._add_directory_contents(dir_node, item)
@@ -202,7 +202,8 @@ class FileTree(Tree[Path]):
             node = self.root
             
         if node.data == target_path:
-            self.cursor_node = node
+            # Use select_node method instead of setting cursor_node directly
+            self.select_node(node)
             return True
             
         for child in node.children:
