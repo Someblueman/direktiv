@@ -66,10 +66,11 @@ class DirektivApp(App[None]):
         ("q", "quit", "Quit"),
         ("ctrl+c", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
-        ("h", "help", "Help"),
-        ("shift+a", "add_document", "Add Document"),
-        ("shift+i", "import_documents", "Import"),
-        ("shift+n", "new_category", "New Category"),
+        ("?", "help", "Help"),
+        ("a", "add_document", "Add Document"),
+        ("i", "import_documents", "Import"),
+        ("n", "new_category", "New Category"),
+        (".", "toggle_dotfiles", "Toggle Hidden"),
     ]
 
     def __init__(self, root_dir: Optional[Path] = None, **kwargs) -> None:
@@ -87,7 +88,8 @@ class DirektivApp(App[None]):
         
         self.root_dir = root_dir.resolve()
         self.database = Database()
-        self.doc_manager = DocumentManager(self.root_dir)
+        self.show_dotfiles = False  # Default to not showing dotfiles
+        self.doc_manager = DocumentManager(self.root_dir, show_dotfiles=self.show_dotfiles)
         self.file_tree: Optional[FileTree] = None
         self.viewer: Optional[MarkdownViewer] = None
         self.dark = True  # Use dark theme
@@ -99,7 +101,10 @@ class DirektivApp(App[None]):
         with Container(id="main-container"):
             with Horizontal(id="panes"):
                 self.file_tree = FileTree(
-                    root_dir=self.root_dir, database=self.database, id="file-tree"
+                    root_dir=self.root_dir, 
+                    database=self.database, 
+                    show_dotfiles=self.show_dotfiles,
+                    id="file-tree"
                 )
                 yield self.file_tree
 
@@ -118,6 +123,11 @@ class DirektivApp(App[None]):
         if self.file_tree:
             self.file_tree.refresh_tree()
 
+    def action_toggle_dotfiles(self) -> None:
+        """Toggle visibility of dotfiles."""
+        if self.file_tree:
+            self.file_tree.toggle_dotfiles()
+    
     def action_help(self) -> None:
         """Show help information."""
         help_text = """
@@ -131,14 +141,14 @@ class DirektivApp(App[None]):
         - Enter: Open selected document
         - Space: Mark document as read/unread
         - Del: Delete selected document
-        - Del: Delete document
         
         Global shortcuts:
-        - Shift+A: Add document to library
-        - Shift+I: Import documents from directory
-        - Shift+N: Create new category
+        - a: Add document to library
+        - i: Import documents from directory
+        - n: Create new category
         - r: Refresh library
-        - h: Show this help
+        - .: Toggle hidden directories
+        - ?: Show this help
         - q/Ctrl+C: Quit
         
         CLI Commands:

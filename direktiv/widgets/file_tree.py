@@ -32,6 +32,7 @@ class FileTree(Tree[Path]):
         self, 
         root_dir: Path, 
         database: Database,
+        show_dotfiles: bool = False,
         **kwargs
     ) -> None:
         """Initialize the file tree.
@@ -39,6 +40,7 @@ class FileTree(Tree[Path]):
         Args:
             root_dir: Root directory (library path)
             database: Database instance for read status
+            show_dotfiles: Whether to show dotfiles (hidden directories)
         """
         super().__init__(
             label="Library",
@@ -47,7 +49,8 @@ class FileTree(Tree[Path]):
         )
         self.root_dir = root_dir
         self.database = database
-        self.doc_manager = DocumentManager(root_dir)
+        self.show_dotfiles = show_dotfiles
+        self.doc_manager = DocumentManager(root_dir, show_dotfiles=show_dotfiles)
         self.can_focus = True
         self.border_title = "Documents"
 
@@ -299,3 +302,14 @@ class FileTree(Tree[Path]):
         if selected_doc:
             # In a real app, you'd show a confirmation dialog
             self.delete_document(selected_doc)
+    
+    def toggle_dotfiles(self) -> None:
+        """Toggle visibility of dotfiles."""
+        self.show_dotfiles = not self.show_dotfiles
+        self.doc_manager.show_dotfiles = self.show_dotfiles
+        self.refresh_tree()
+        # Update border title to show status
+        if self.show_dotfiles:
+            self.border_title = "Documents (showing hidden)"
+        else:
+            self.border_title = "Documents"

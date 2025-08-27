@@ -11,17 +11,19 @@ from typing import Dict, List, Optional, Tuple
 class DocumentManager:
     """Manages the document library for direktiv."""
 
-    def __init__(self, library_path: Optional[Path] = None):
+    def __init__(self, library_path: Optional[Path] = None, show_dotfiles: bool = False):
         """Initialize document manager.
         
         Args:
             library_path: Path to document library. Defaults to ~/.direktiv/documents
+            show_dotfiles: Whether to show dotfiles (hidden directories)
         """
         if library_path is None:
             library_path = Path.home() / ".direktiv" / "documents"
         
         self.library_path = library_path
         self.library_path.mkdir(parents=True, exist_ok=True)
+        self.show_dotfiles = show_dotfiles
         
         # Create General category by default
         self._ensure_default_categories()
@@ -141,7 +143,10 @@ class DocumentManager:
         """
         categories = []
         for item in self.library_path.iterdir():
-            if item.is_dir() and not item.name.startswith('.'):
+            if item.is_dir():
+                # Skip dotfiles unless show_dotfiles is True
+                if not self.show_dotfiles and item.name.startswith('.'):
+                    continue
                 categories.append(item.name)
         return sorted(categories)
 
