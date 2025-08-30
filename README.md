@@ -4,7 +4,7 @@ A personal markdown document manager for your terminal.
 
 ## Overview
 
-direktiv v0.2.0 is a terminal-based markdown document manager that provides a centralized library for all your markdown files. Instead of browsing directories, direktiv maintains its own organized document library in `~/.direktiv/documents/`, allowing you to categorize and manage your markdown documents from one place.
+direktiv v0.3.0 is a terminal-based markdown document manager that provides a centralized library for all your markdown files. Instead of browsing directories, direktiv maintains its own organized document library in `~/.direktiv/documents/`, allowing you to categorize and manage your markdown documents from one place.
 
 ## Features
 
@@ -13,7 +13,8 @@ direktiv v0.2.0 is a terminal-based markdown document manager that provides a ce
 - **TUI Viewer**: Beautiful terminal interface for reading markdown
 - **Read/Unread Tracking**: Keep track of which documents you've read
 - **CLI Commands**: Add, import, list, and manage documents from the command line
-- **Document Import**: Bulk import existing markdown files
+- **Add Documents (TUI)**: Multi-select files or select a directory to import all `.md` files
+- **Document Import (CLI)**: Bulk import existing markdown files via command
 - **Statistics**: Track your reading progress and library stats
 
 ## Installation
@@ -33,11 +34,13 @@ direktiv
 
 In the viewer:
 - Arrow keys: Navigate categories and documents
-- Enter: Open document
-- Space: Mark as read/unread
+- Enter: Open document / expand-collapse folders
+- Space: Mark document as read/unread
+- a: Add documents (multi-select; Space selects, Enter confirms)
+- .: Toggle hidden files/folders
 - r: Refresh library
-- h: Show help
-- q: Quit
+- ?: Show help
+- q/Ctrl+C: Quit
 
 ### CLI Commands
 
@@ -127,9 +130,10 @@ Configuration is stored in `~/.direktiv/config.json` and includes:
 - Auto-mark as read timer
 - Category icons and colors
 
-## Upgrading from v0.1.0
+## Upgrading
 
-Version 0.2.0 introduces the document library concept. Instead of browsing arbitrary directories, direktiv now manages its own library. Use the `import` command to bring existing markdown files into your library.
+- v0.3.0: Unified “Add Documents” in the TUI with multi-select. Use `a` to add files or directories (directories import all `.md` recursively). Hidden toggle now affects the selection dialog.
+- v0.2.0: Introduced the document library concept. Use the `import` command to bring existing markdown files into your library.
 
 ## Development
 
