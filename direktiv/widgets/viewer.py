@@ -1,14 +1,15 @@
 """Markdown viewer widget for direktiv."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Union
 
 from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.text import Text
-from textual.widgets import Static
-from textual.reactive import reactive
+from textual import events
 from textual.containers import VerticalScroll
+from textual.reactive import reactive
+from textual.widgets import Static
 
 
 class MarkdownViewer(VerticalScroll):
@@ -16,7 +17,7 @@ class MarkdownViewer(VerticalScroll):
 
     current_file: reactive[Optional[Path]] = reactive(None)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the markdown viewer."""
         super().__init__(**kwargs)
         self._content_widget: Optional[Static] = None
@@ -40,7 +41,7 @@ class MarkdownViewer(VerticalScroll):
         try:
             if is_markdown:
                 # Render as markdown using Rich
-                renderable = Markdown(content, code_theme="monokai")
+                renderable: Union[Markdown, Text] = Markdown(content, code_theme="monokai")
             else:
                 # Render as plain text
                 renderable = Text(content)
@@ -101,37 +102,52 @@ class MarkdownViewer(VerticalScroll):
         """
         return self.current_file
 
-    async def key_home(self) -> None:
-        """Handle Home key - scroll to top."""
-        self.scroll_home()
-
-    async def key_end(self) -> None:
-        """Handle End key - scroll to bottom."""
-        self.scroll_end()
-
-    async def key_page_up(self) -> None:
-        """Handle Page Up key."""
-        self.scroll_page_up()
-
-    async def key_page_down(self) -> None:
-        """Handle Page Down key."""
-        self.scroll_page_down()
-
-    async def key_j(self) -> None:
-        """Handle j key - scroll down (vim-style)."""
-        self.scroll_down()
-
-    async def key_k(self) -> None:
-        """Handle k key - scroll up (vim-style)."""
-        self.scroll_up()
-
-    async def key_g(self) -> None:
-        """Handle g key - scroll to top (vim-style)."""
-        self.scroll_home()
-
-    async def key_shift_g(self) -> None:
-        """Handle Shift+G key - scroll to bottom (vim-style)."""
-        self.scroll_end()
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events for viewer specific scrolling actions."""
+        if event.key == "home":
+            """Handle Home key - scroll to top."""
+            self.scroll_home()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "end":
+            """Handle End key - scroll to bottom."""
+            self.scroll_end()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "pageup":
+            """Handle Page Up key."""
+            self.scroll_page_up()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "pagedown":
+            """Handle Page Down key."""
+            self.scroll_page_down()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "j":
+            """Handle j key - scroll down (vim-style)."""
+            self.scroll_down()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "k":
+            """Handle k key - scroll up (vim-style)."""
+            self.scroll_up()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "g":
+            """Handle g key - scroll to top (vim-style)."""
+            self.scroll_home()
+            event.prevent_default()  # Consume this event
+            return
+        elif event.key == "shift+g":
+            """Handle Shift+G key - scroll to bottom (vim-style)."""
+            self.scroll_end()
+            event.prevent_default()  # Consume this event
+            return
+        
+        # For all other keys, explicitly do NOT prevent default
+        # This allows them to bubble up to the app level
+        # DO NOT call event.prevent_default() or event.stop() here
 
     def watch_current_file(
         self, old_file: Optional[Path], new_file: Optional[Path]

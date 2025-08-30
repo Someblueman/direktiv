@@ -1,23 +1,24 @@
 """Main application for direktiv."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Container
-from textual.widgets import Header, Footer
 from textual import events
+from textual.app import App, ComposeResult
+from textual.containers import Container, Horizontal
+from textual.widgets import Footer, Header
 
-from .widgets.file_tree import FileTree
-from .widgets.viewer import MarkdownViewer
-from .widgets.dialogs import (
-    InputDialog,
-    SimpleFileDialog,
-    CategorySelectDialog,
-    MessageDialog
-)
 from .database import Database
 from .document_manager import DocumentManager
+from .widgets.dialogs import (
+    CategorySelectDialog,
+    InputDialog,
+    MessageDialog,
+    SimpleFileDialog,
+    MultiSelectFileDialog,
+)
+from .widgets.file_tree import FileTree
+from .widgets.viewer import MarkdownViewer
 
 
 class DirektivApp(App[None]):
@@ -67,29 +68,31 @@ class DirektivApp(App[None]):
         ("ctrl+c", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
         ("?", "help", "Help"),
-        ("a", "add_document", "Add Document"),
-        ("i", "import_documents", "Import"),
+        ("a", "add_documents", "Add Documents"),
         ("n", "new_category", "New Category"),
+        ("f", "new_folder", "New Folder"),
         (".", "toggle_dotfiles", "Toggle Hidden"),
     ]
 
-    def __init__(self, root_dir: Optional[Path] = None, **kwargs) -> None:
+    def __init__(self, root_dir: Optional[Path] = None, **kwargs: Any) -> None:
         """Initialize the application.
 
         Args:
             root_dir: Root directory for documents. Defaults to ~/.direktiv/documents
         """
         super().__init__(**kwargs)
-        
+
         # Default to library path
         if root_dir is None:
             root_dir = Path.home() / ".direktiv" / "documents"
             root_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.root_dir = root_dir.resolve()
         self.database = Database()
         self.show_dotfiles = False  # Default to not showing dotfiles
-        self.doc_manager = DocumentManager(self.root_dir, show_dotfiles=self.show_dotfiles)
+        self.doc_manager = DocumentManager(
+            self.root_dir, show_dotfiles=self.show_dotfiles
+        )
         self.file_tree: Optional[FileTree] = None
         self.viewer: Optional[MarkdownViewer] = None
         self.dark = True  # Use dark theme
@@ -101,10 +104,11 @@ class DirektivApp(App[None]):
         with Container(id="main-container"):
             with Horizontal(id="panes"):
                 self.file_tree = FileTree(
-                    root_dir=self.root_dir, 
-                    database=self.database, 
+                    root_dir=self.root_dir,
+                    database=self.database,
                     show_dotfiles=self.show_dotfiles,
-                    id="file-tree"
+                    doc_manager=self.doc_manager,  # Pass the app's doc_manager
+                    id="file-tree",
                 )
                 yield self.file_tree
 
@@ -117,6 +121,9 @@ class DirektivApp(App[None]):
         """Called when the app is mounted."""
         self.title = "direktiv"
         self.sub_title = "Personal Markdown Document Manager"
+        # Set focus to file tree initially
+        if self.file_tree:
+            self.file_tree.focus()
 
     def action_refresh(self) -> None:
         """Refresh the file tree."""
@@ -127,7 +134,9 @@ class DirektivApp(App[None]):
         """Toggle visibility of dotfiles."""
         if self.file_tree:
             self.file_tree.toggle_dotfiles()
-    
+            # Keep app-level flag in sync for dialogs
+            self.show_dotfiles = self.file_tree.show_dotfiles
+
     def action_help(self) -> None:
         """Show help information."""
         help_text = """
@@ -143,9 +152,9 @@ class DirektivApp(App[None]):
         - Del: Delete selected document
         
         Global shortcuts:
-        - a: Add document to library
-        - i: Import documents from directory
-        - n: Create new category
+        - a: Add documents (multi-select files or directories)
+        - n: Create new category (folder)
+        - f: Create new folder (same as 'n')
         - r: Refresh library
         - .: Toggle hidden directories
         - ?: Show this help
@@ -160,184 +169,110 @@ class DirektivApp(App[None]):
         if self.viewer:
             self.viewer.show_content(help_text, is_markdown=True)
 
-    async def action_add_document(self) -> None:
-        """Show dialog to add a document to library."""
-        # First, get the file path
-        file_path = await self.push_screen(
-            SimpleFileDialog(
-                title="Add Document to Library",
-                select_directory=False
+    def action_add_documents(self) -> None:
+        """Start worker to add one or more documents or directories."""
+        self.run_worker(self._flow_add_documents())
+
+    async def _flow_add_documents(self) -> None:
+        """Unified flow: select files and/or directories, then choose category, then add/import."""
+        selections = await self.push_screen_wait(
+            MultiSelectFileDialog(
+                title="Add Documents to Library",
+                show_dotfiles=self.show_dotfiles,
             )
         )
-        
-        if not file_path:
+        if not selections:
             return
-        
-        # Get list of categories
+
         categories = self.doc_manager.list_categories()
-        
-        # Show category selection dialog
-        category = await self.push_screen(
+        category = await self.push_screen_wait(
             CategorySelectDialog(
                 title="Select Category",
                 categories=categories,
-                default_category="General"
+                default_category="General",
             )
         )
-        
         if not category:
             return
-        
-        # Add the document
-        success, message, library_path = self.doc_manager.add_document(
-            file_path, category
-        )
-        
-        if success and library_path:
-            # Add to database
-            self.database.add_document(
-                str(library_path),
-                category=category,
-                original_path=str(file_path)
-            )
-            
-            # Refresh the file tree
-            if self.file_tree:
-                self.file_tree.refresh_tree()
-            
-            # Show success message
-            if self.viewer:
-                self.viewer.show_content(
-                    f"# Document Added\n\n{message}",
-                    is_markdown=True
+
+        total_added = 0
+        messages: list[str] = []
+        for path in selections:
+            if path.is_dir():
+                # Import all markdown files recursively from directory into chosen category
+                success_count, fail_count, msgs = self.doc_manager.import_directory(
+                    path, category, recursive=True
                 )
-        else:
-            # Show error message
-            await self.push_screen(
-                MessageDialog(
-                    "Error",
-                    message
-                )
-            )
-    
-    async def action_import_documents(self) -> None:
-        """Show dialog to import documents from a directory."""
-        # Get directory path
-        dir_path = await self.push_screen(
-            SimpleFileDialog(
-                title="Import Documents from Directory",
-                select_directory=True
-            )
-        )
-        
-        if not dir_path:
-            return
-        
-        # Get list of categories
-        categories = self.doc_manager.list_categories()
-        categories.append("[Use subdirectories as categories]")
-        
-        # Show category selection dialog
-        category = await self.push_screen(
-            CategorySelectDialog(
-                title="Import to Category",
-                categories=categories,
-                default_category="[Use subdirectories as categories]"
-            )
-        )
-        
-        if not category:
-            return
-        
-        # Handle special case for subdirectory categorization
-        if category == "[Use subdirectories as categories]":
-            category = None
-        
-        # Import documents
-        success_count, fail_count, messages = self.doc_manager.import_directory(
-            dir_path, category, recursive=True
-        )
-        
-        # Update database for imported files
-        for doc in self.doc_manager.list_documents():
-            if not self.database.get_document_info(doc['path']):
-                self.database.add_document(
-                    doc['path'],
-                    category=doc['category']
-                )
-        
-        # Refresh the file tree
+                total_added += success_count
+                messages.extend(msgs)
+            elif path.is_file():
+                success, message, library_path = self.doc_manager.add_document(path, category)
+                if success and library_path:
+                    self.database.add_document(
+                        str(library_path), category=category, original_path=str(path)
+                    )
+                    total_added += 1
+                    messages.append(message)
+                else:
+                    messages.append(message)
+
         if self.file_tree:
             self.file_tree.refresh_tree()
-        
-        # Show results
-        if self.viewer:
-            result_text = f"""# Import Results
 
-Imported **{success_count}** document(s) from {dir_path}
+        if self.viewer:
+            result_text = f"""# Add Results
+
+Added {total_added} document(s) to {category}
 """
-            if fail_count > 0:
-                result_text += f"\nFailed to import **{fail_count}** document(s)\n"
-            
-            if len(messages) <= 20:
+            if len(messages) <= 30 and messages:
                 result_text += "\n## Details:\n\n"
                 for msg in messages:
                     result_text += f"- {msg}\n"
-            
             self.viewer.show_content(result_text, is_markdown=True)
-    
-    async def action_new_category(self) -> None:
-        """Show dialog to create a new category."""
-        # Get category name
-        category_name = await self.push_screen(
+
+    # Removed separate import flow; unified under add_documents
+
+    async def action_new_folder(self) -> None:
+        """Alias for new_category - creates a new folder."""
+        await self.action_new_category()
+
+    def action_new_category(self) -> None:  # type: ignore[func-returns-value]
+        """Start worker to create a new category via dialog."""
+        self.run_worker(self._flow_new_category())
+
+    async def _flow_new_category(self) -> None:
+        category_name = await self.push_screen_wait(
             InputDialog(
                 title="Create New Category",
                 prompt="Enter category name:",
-                placeholder="e.g., Projects, Research, Notes"
+                placeholder="e.g., Projects, Research, Notes",
             )
         )
-        
         if not category_name:
             return
-        
-        # Create the category
+
         success, message = self.doc_manager.create_category(category_name)
-        
         if success:
-            # Add to database
             self.database.add_category(category_name)
-            
-            # Refresh the file tree
             if self.file_tree:
                 self.file_tree.refresh_tree()
-            
-            # Show success message
             if self.viewer:
                 self.viewer.show_content(
-                    f"# Category Created\n\n{message}",
-                    is_markdown=True
+                    f"# Category Created\n\n{message}", is_markdown=True
                 )
         else:
-            # Show error message
-            await self.push_screen(
-                MessageDialog(
-                    "Error",
-                    message
-                )
-            )
+            await self.push_screen_wait(MessageDialog("Error", message))
 
-    def on_file_tree_file_selected(self, message) -> None:
+
+    def on_file_tree_file_selected(self, message: Any) -> None:
         """Handle file selection from file tree."""
         if self.viewer and message.file_path:
             self.viewer.show_file(message.file_path)
             # Update database with library path
             self.database.update_last_opened(str(message.file_path))
-            
+
             # Ensure document is in database
             if not self.database.get_document_info(str(message.file_path)):
                 # Determine category from path
                 category = message.file_path.parent.name
-                self.database.add_document(
-                    str(message.file_path),
-                    category=category
-                )
+                self.database.add_document(str(message.file_path), category=category)
