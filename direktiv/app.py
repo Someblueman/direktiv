@@ -234,7 +234,7 @@ Added {total_added} document(s) to {category}
 
     async def action_new_folder(self) -> None:
         """Alias for new_category - creates a new folder."""
-        await self.action_new_category()
+        self.action_new_category()
 
     def action_new_category(self) -> None:  # type: ignore[func-returns-value]
         """Start worker to create a new category via dialog."""
